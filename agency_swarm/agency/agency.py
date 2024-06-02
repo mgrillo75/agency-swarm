@@ -3,6 +3,7 @@ import json
 import os
 import queue
 import threading
+import time
 import uuid
 from enum import Enum
 from typing import List, TypedDict, Callable, Any, Dict, Literal, Union, Optional
@@ -19,7 +20,10 @@ from agency_swarm.messages.message_output import MessageOutputLive
 from agency_swarm.threads import Thread
 from agency_swarm.tools import BaseTool, FileSearch, CodeInterpreter
 from agency_swarm.user import User
+from agency_swarm.util.files import determine_file_type
 from agency_swarm.util.shared_state import SharedState
+from openai.types.beta.threads.runs.tool_call import ToolCall, FunctionToolCall, CodeInterpreterToolCall, FileSearchToolCall
+
 
 from agency_swarm.util.streaming import AgencyEventHandler
 
@@ -66,11 +70,11 @@ class Agency:
             settings_path (str, optional): The path to the settings file for the agency. Must be json. If file does not exist, it will be created. Defaults to None.
             settings_callbacks (SettingsCallbacks, optional): A dictionary containing functions to load and save settings for the agency. The keys must be "load" and "save". Both values must be defined. Defaults to None.
             threads_callbacks (ThreadsCallbacks, optional): A dictionary containing functions to load and save threads for the agency. The keys must be "load" and "save". Both values must be defined. Defaults to None.
-            temperature (float, optional): The temperature value to use for the agents. Agent specific values will override this. Defaults to 0.3.
-            top_p (float, optional): The top_p value to use for the agents. Agent specific values will override this. Defaults to None.
-            max_prompt_tokens (int, optional): The maximum number of tokens allowed in the prompt for each agent. Agent specific values will override this. Defaults to None.
-            max_completion_tokens (int, optional): The maximum number of tokens allowed in the completion for each agent. Agent specific values will override this. Defaults to None.
-            truncation_strategy (dict, optional): The truncation strategy to use for the completion for each agent. Agent specific values will override this. Defaults to None.
+            temperature (float, optional): The temperature value to use for the agents. Agent-specific values will override this. Defaults to 0.3.
+            top_p (float, optional): The top_p value to use for the agents. Agent-specific values will override this. Defaults to None.
+            max_prompt_tokens (int, optional): The maximum number of tokens allowed in the prompt for each agent. Agent-specific values will override this. Defaults to None.
+            max_completion_tokens (int, optional): The maximum number of tokens allowed in the completion for each agent. Agent-specific values will override this. Defaults to None.
+            truncation_strategy (dict, optional): The truncation strategy to use for the completion for each agent. Agent-specific values will override this. Defaults to None.
 
         This constructor initializes various components of the Agency, including CEO, agents, threads, and user interactions. It parses the agency chart to set up the organizational structure and initializes the messaging tools, agents, and threads necessary for the operation of the agency. Additionally, it prepares a main thread for user interactions.
         """
@@ -222,8 +226,10 @@ class Agency:
         else:
             js = js.replace("{theme}", "light")
 
-        message_file_ids = []
+        attachments = []
+        images = []
         message_file_names = None
+        uploading_files = False
         recipient_agents = [agent.name for agent in self.main_recipients]
         recipient_agent = self.main_recipients[0]
 
@@ -236,7 +242,7 @@ class Agency:
                                            value=recipient_agent.name)
                     msg = gr.Textbox(label="Your Message", lines=4)
                 with gr.Column(scale=1):
-                    file_upload = gr.Files(label="Files", type="filepath")
+                    file_upload = gr.Files(label="OpenAI Files", type="filepath")
             button = gr.Button(value="Send", variant="primary")
 
             def handle_dropdown_change(selected_option):
@@ -244,32 +250,79 @@ class Agency:
                 recipient_agent = self._get_agent_by_name(selected_option)
 
             def handle_file_upload(file_list):
-                nonlocal message_file_ids
+                nonlocal attachments
                 nonlocal message_file_names
-                message_file_ids = []
+                nonlocal uploading_files
+                nonlocal images
+                uploading_files = True
+                attachments = []
                 message_file_names = []
                 if file_list:
                     try:
                         for file_obj in file_list:
+                            file_type = determine_file_type(file_obj.name)
+                            purpose = "assistants" if file_type != "vision" else "vision"
+                            tools = [{"type": "code_interpreter"}] if file_type == "assistants.code_interpreter" else [{"type": "file_search"}]
+
                             with open(file_obj.name, 'rb') as f:
                                 # Upload the file to OpenAI
                                 file = self.main_thread.client.files.create(
                                     file=f,
-                                    purpose="assistants"
+                                    purpose=purpose
                                 )
-                            message_file_ids.append(file.id)
+
+                            if file_type == "vision":
+                                images.append({
+                                    "type": "image_file",
+                                    "image_file": {"file_id": file.id}
+                                })
+                            else:
+                                attachments.append({
+                                    "file_id": file.id,
+                                    "tools": tools
+                                })
+
                             message_file_names.append(file.filename)
                             print(f"Uploaded file ID: {file.id}")
-                        return message_file_ids
+                        return attachments
                     except Exception as e:
                         print(f"Error: {e}")
                         return str(e)
+                    finally:
+                        uploading_files = False
 
+                uploading_files = False
                 return "No files uploaded"
 
             def user(user_message, history):
                 if not user_message.strip():
                     return user_message, history
+                
+                nonlocal message_file_names
+                nonlocal uploading_files
+                nonlocal images
+                nonlocal attachments
+                nonlocal recipient_agent
+
+                # Check if attachments contain file search or code interpreter types
+                def check_and_add_tools_in_attachments(attachments, recipient_agent):
+                    for attachment in attachments:
+                        for tool in attachment.get("tools", []):
+                            if tool["type"] == "file_search":
+                                if not any(isinstance(t, FileSearch) for t in recipient_agent.tools):
+                                    # Add FileSearch tool if it does not exist
+                                    recipient_agent.tools.append(FileSearch)
+                                    recipient_agent.client.beta.assistants.update(recipient_agent.id, tools=recipient_agent.get_oai_tools())
+                                    print("Added FileSearch tool to recipient agent to analyze the file.")
+                            elif tool["type"] == "code_interpreter":
+                                if not any(isinstance(t, CodeInterpreter) for t in recipient_agent.tools):
+                                    # Add CodeInterpreter tool if it does not exist
+                                    recipient_agent.tools.append(CodeInterpreter)
+                                    recipient_agent.client.beta.assistants.update(recipient_agent.id, tools=recipient_agent.get_oai_tools())
+                                    print("Added CodeInterpreter tool to recipient agent to analyze the file.")
+                    return None
+
+                check_and_add_tools_in_attachments(attachments, recipient_agent)
 
                 if history is None:
                     history = []
@@ -324,8 +377,21 @@ class Agency:
                     chatbot_queue.put(delta.value)
 
                 @override
-                def on_tool_call_created(self, tool_call):
-                    # TODO: add support for code interpreter and retirieval tools
+                def on_tool_call_created(self, tool_call: ToolCall):
+                    if isinstance(tool_call, dict):
+                        if "type" not in tool_call:
+                            tool_call["type"] = "function"
+                        
+                        if tool_call["type"] == "function":
+                            tool_call = FunctionToolCall(**tool_call)
+                        elif tool_call["type"] == "code_interpreter":
+                            tool_call = CodeInterpreterToolCall(**tool_call)
+                        elif tool_call["type"] == "file_search" or tool_call["type"] == "retrieval":
+                            tool_call = FileSearchToolCall(**tool_call)
+                        else:
+                            raise ValueError("Invalid tool call type: " + tool_call["type"])
+
+                    # TODO: add support for code interpreter and retrieval tools
                     if tool_call.type == "function":
                         chatbot_queue.put("[new_message]")
                         self.message_output = MessageOutput("function", self.recipient_agent_name, self.agent_name,
@@ -333,10 +399,23 @@ class Agency:
                         chatbot_queue.put(self.message_output.get_formatted_header() + "\n")
 
                 @override
-                def on_tool_call_done(self, snapshot):
+                def on_tool_call_done(self, snapshot: ToolCall):
+                    if isinstance(snapshot, dict):
+                        if "type" not in snapshot:
+                            snapshot["type"] = "function"
+                        
+                        if snapshot["type"] == "function":
+                            snapshot = FunctionToolCall(**snapshot)
+                        elif snapshot["type"] == "code_interpreter":
+                            snapshot = CodeInterpreterToolCall(**snapshot)
+                        elif snapshot["type"] == "file_search":
+                            snapshot = FileSearchToolCall(**snapshot)
+                        else:
+                            raise ValueError("Invalid tool call type: " + snapshot["type"])
+                        
                     self.message_output = None
 
-                    # TODO: add support for code interpreter and retirieval tools
+                    # TODO: add support for code interpreter and retrieval tools
                     if snapshot.type != "function":
                         return
 
@@ -386,18 +465,38 @@ class Agency:
                 if not original_message:
                     return "", history
 
-                nonlocal message_file_ids
+                nonlocal attachments
                 nonlocal message_file_names
                 nonlocal recipient_agent
-                print("Message files: ", message_file_ids)
-                # Replace this with your actual chatbot logic
+                nonlocal images
+                nonlocal uploading_files
+
+                if uploading_files:
+                    history.append([None, "Uploading files... Please wait."])
+                    yield "", history
+                    return "", history
+
+                print("Message files: ", attachments)
+                print("Images: ", images)
+                
+                if images and len(images) > 0:
+                    original_message = [
+                        {
+                            "type": "text",
+                            "text": original_message,
+                        },
+                        *images
+                    ]
+
 
                 completion_thread = threading.Thread(target=self.get_completion_stream, args=(
-                    original_message, GradioEventHandler, message_file_ids, recipient_agent))
+                    original_message, GradioEventHandler, [], recipient_agent, "", attachments, None))
                 completion_thread.start()
 
-                message_file_ids = []
+                attachments = []
                 message_file_names = []
+                images = []
+                uploading_files = False
 
                 new_message = True
                 while True:
@@ -503,6 +602,19 @@ class Agency:
 
             @override
             def on_tool_call_created(self, tool_call):
+                if isinstance(tool_call, dict):
+                    if "type" not in tool_call:
+                        tool_call["type"] = "function"
+                    
+                    if tool_call["type"] == "function":
+                        tool_call = FunctionToolCall(**tool_call)
+                    elif tool_call["type"] == "code_interpreter":
+                        tool_call = CodeInterpreterToolCall(**tool_call)
+                    elif tool_call["type"] == "file_search" or tool_call["type"] == "retrieval":
+                        tool_call = FileSearchToolCall(**tool_call)
+                    else:
+                        raise ValueError("Invalid tool call type: " + tool_call["type"])
+
                 # TODO: add support for code interpreter and retirieval tools
 
                 if tool_call.type == "function":
@@ -511,6 +623,19 @@ class Agency:
 
             @override
             def on_tool_call_delta(self, delta, snapshot):
+                if isinstance(snapshot, dict):
+                    if "type" not in snapshot:
+                        snapshot["type"] = "function"
+                    
+                    if snapshot["type"] == "function":
+                        snapshot = FunctionToolCall(**snapshot)
+                    elif snapshot["type"] == "code_interpreter":
+                        snapshot = CodeInterpreterToolCall(**snapshot)
+                    elif snapshot["type"] == "file_search":
+                        snapshot = FileSearchToolCall(**snapshot)
+                    else:
+                        raise ValueError("Invalid tool call type: " + snapshot["type"])
+                    
                 self.message_output.cprint_update(str(snapshot.function))
 
             @override
@@ -844,7 +969,7 @@ class Agency:
         class SendMessage(BaseTool):
             my_primary_instructions: str = Field(...,
                                                  description="Please repeat your primary instructions step-by-step, including both completed "
-                                                             "and the following next steps that you need to perfrom. For multi-step, complex tasks, first break them down "
+                                                             "and the following next steps that you need to perform. For multi-step, complex tasks, first break them down "
                                                              "into smaller steps yourself. Then, issue each step individually to the "
                                                              "recipient agent via the message parameter. Each identified step should be "
                                                              "sent in separate message. Keep in mind, that the recipient agent does not have access "
