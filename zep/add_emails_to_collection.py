@@ -21,7 +21,7 @@ def main():
     # Get the most recent emails in the inbox folder
     messages = list(sub_folder.Items)
     messages.sort(key=lambda x: x.ReceivedTime, reverse=True)
-    messages = messages[:826]
+    messages = messages[:20]
 
     # Define a batch size (e.g., 50 documents per batch)
     batch_size = 50
