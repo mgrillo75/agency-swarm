@@ -81,7 +81,7 @@ class Agent():
             api_params: Dict[str, Dict[str, str]] = None,
             file_ids: List[str] = None,
             metadata: Dict[str, str] = None,
-            model: str = "gpt-4-turbo",
+            model: str = "gpt-4o",
             validation_attempts: int = 1,
             max_prompt_tokens: int = None,
             max_completion_tokens: int = None,
@@ -107,7 +107,7 @@ class Agent():
             api_headers (Dict[str,Dict[str, str]], optional): Headers to be used for the openapi requests. Each key must be a full filename from schemas_folder. Defaults to an empty dictionary.
             api_params (Dict[str, Dict[str, str]], optional): Extra params to be used for the openapi requests. Each key must be a full filename from schemas_folder. Defaults to an empty dictionary.
             metadata (Dict[str, str], optional): Metadata associated with the agent. Defaults to an empty dictionary.
-            model (str, optional): The model identifier for the OpenAI API. Defaults to "gpt-4-turbo-preview".
+            model (str, optional): The model identifier for the OpenAI API. Defaults to "gpt-4o".
             validation_attempts (int, optional): Number of attempts to validate the response with response_validator function. Defaults to 1.
             max_prompt_tokens (int, optional): Maximum number of tokens allowed in the prompt. Defaults to None.
             max_completion_tokens (int, optional): Maximum number of tokens allowed in the completion. Defaults to None.
@@ -194,9 +194,14 @@ class Agent():
             self.model = self.model or self.assistant.model
             self.tool_resources = self.tool_resources or self.assistant.tool_resources.model_dump()
 
-            # update assistant if parameters are different
-            if not self._check_parameters(self.assistant.model_dump()):
-                self._update_assistant()
+            for tool in self.assistant.tools:
+                # update assistants created with v1
+                if tool.type == "retrieval":
+                    self.client.beta.assistants.update(self.id, tools=self.get_oai_tools())
+
+            # # update assistant if parameters are different
+            # if not self._check_parameters(self.assistant.model_dump()):
+            #     self._update_assistant()
 
             return self
 
@@ -213,7 +218,7 @@ class Agent():
 
                             # update assistant if parameters are different
                             if not self._check_parameters(self.assistant.model_dump()):
-                                print("Updating assistant... " + self.name)
+                                print("Updating agent... " + self.name)
                                 self._update_assistant()
 
                             if self.assistant.tool_resources:
