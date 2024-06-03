@@ -15,4 +15,6 @@ agency = Agency([email_ceo, positive_response_agent, negative_response_agent, [e
                 )
 
 if __name__ == '__main__':
-    agency.run_demo()
+    completion_output = agency.get_completion("Hello, I have been tring to reach someone from your company for several days with no response.  I need to speak with someone as soon as possible!", yield_messages=False)
+    #agency.run_demo()
+    #agency.demo_gradio()
