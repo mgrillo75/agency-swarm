@@ -8,17 +8,25 @@ client = Zep(api_key="z_1dWlkIjoiMGE4MGI0NzAtODdhMS00M2JiLTlmYTgtYjNiZTdiMmE2ZWI
 collection_name = "emails"  # Collection names should be alphanumeric
 
 # search for documents using only a query string
-query = "Siemens"
-results = client.document.search(collection_name, text=query, limit=5)
+#query = "Siemens"
+#results = client.document.search(collection_name, text=query, limit=5)
 
 # hybrid search for documents using a query string and metadata filter
-metadata_query = {
-    "where": {"jsonpath": '$[*] ? (@.baz == "qux")'},
-}
-results2 = client.document.search(
-    collection_name, text=query, metadata=metadata_query, limit=5
+#metadata_query = {
+#    "where": {"jsonpath": '$[*] ? (@.baz == "qux")'},
+#}
+#results2 = client.document.search(
+#    collection_name, text=query, metadata=metadata_query, limit=5
+#)
+
+query = "Steam Automation temperature feedback PID loop"
+results = client.document.search(
+    collection_name="emails",
+    text=query,
+    limit=2  # Adjust the limit as needed
 )
+print(results)
 
 # Print the collection object to confirm creation
-print("Query Results:", results)
-print("Query Results2:", results2)
+#print("Query Results:", results)
+#print("Query Results2:", results2)
