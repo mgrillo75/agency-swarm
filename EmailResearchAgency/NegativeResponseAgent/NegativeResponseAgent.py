@@ -1,11 +1,11 @@
 from agency_swarm.agents import Agent
 
 
-class EmailCEO(Agent):
+class NegativeResponseAgent(Agent):
     def __init__(self):
         super().__init__(
-            name="EmailCEO",
-            description="This agent analyzes incoming emails to determine their sentiment, directs the email to the appropriate response agent based on the sentiment, searches for historical information related to the email content using the Zep Long-Term Memory for AI Assistance framework, and sending a summary of the historical information back to the user",
+            name="NegativeResponseAgent",
+            description="This agent drafts responses for emails categorized as negative, with access to sensitive handling protocols.",
             instructions="./instructions.md",
             files_folder="./files",
             schemas_folder="./schemas",
