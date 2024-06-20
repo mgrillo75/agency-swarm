@@ -1,14 +1,12 @@
 from agency_swarm import Agency
-from NegativeResponseAgent import NegativeResponseAgent
-from PositiveResponseAgent import PositiveResponseAgent
+from ResearchAgent import ResearchAgent
 from EmailCEO import EmailCEO
 
 email_ceo = EmailCEO()
-positive_response_agent = PositiveResponseAgent()
-negative_response_agent = NegativeResponseAgent()
+research_agent = ResearchAgent()
 
-agency = Agency([email_ceo, positive_response_agent, negative_response_agent, [email_ceo, positive_response_agent],
-                 [email_ceo, negative_response_agent]],
+agency = Agency([email_ceo, research_agent,
+                 [email_ceo, research_agent]],
                 shared_instructions='./agency_manifesto.md',  # shared instructions for all agents
                 max_prompt_tokens=25000,  # default tokens in conversation for all agents
                 temperature=0.3,  # default temperature for all agents

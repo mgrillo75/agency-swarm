@@ -1,11 +1,11 @@
 from agency_swarm.agents import Agent
 
 
-class PositiveResponseAgent(Agent):
+class ResearchAgent(Agent):
     def __init__(self):
         super().__init__(
-            name="PositiveResponseAgent",
-            description="This agent drafts responses for emails categorized as positive or neutral.",
+            name="ResearchAgent",
+            description="This agent researches if there is any history related to the content of the email message.",
             instructions="./instructions.md",
             files_folder="./files",
             schemas_folder="./schemas",

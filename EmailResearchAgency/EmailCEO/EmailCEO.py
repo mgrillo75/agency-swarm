@@ -5,7 +5,7 @@ class EmailCEO(Agent):
     def __init__(self):
         super().__init__(
             name="EmailCEO",
-            description="This agent analyzes incoming emails to determine their sentiment, searches for historical information related to the email content using the Zep Long-Term Memory for AI Assistance framework, and sends a summary of the historical information back to the user",
+            description="This agent analyzes incoming emails to determine their sentiment, identifies the sender of the email, and interacts with the ResearchAgent to gather historical information related to the email.",
             instructions="./instructions.md",
             files_folder="./files",
             schemas_folder="./schemas",
