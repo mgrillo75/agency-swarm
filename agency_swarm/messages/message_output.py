@@ -1,14 +1,23 @@
-from typing import Literal
 import hashlib
-from rich.markdown import Markdown
+from typing import Literal
+
+from openai.types.beta.threads.message import Message
 from rich.console import Console, Group
 from rich.live import Live
+from rich.markdown import Markdown
 
 console = Console()
 
+
 class MessageOutput:
-    def __init__(self, msg_type: Literal["function", "function_output", "text", "system"], sender_name: str,
-                 receiver_name: str, content, obj=None):
+    def __init__(
+        self,
+        msg_type: Literal["function", "function_output", "text", "system"],
+        sender_name: str,
+        receiver_name: str,
+        content,
+        obj: Message | None = None,
+    ):
         """Initialize a message object with sender, receiver, content and type.
 
         Args:
@@ -36,7 +45,12 @@ class MessageOutput:
         hash_obj = hashlib.md5(encoded_str)
         hash_int = int(hash_obj.hexdigest(), 16)
         colors = [
-            'green', 'yellow', 'blue', 'magenta', 'cyan', 'bright_white',
+            "green",
+            "yellow",
+            "blue",
+            "magenta",
+            "cyan",
+            "bright_white",
         ]
         color_index = hash_int % len(colors)
         return colors[color_index]
@@ -44,7 +58,7 @@ class MessageOutput:
     def cprint(self):
         console.rule()
 
-        header_text = self.sender_emoji + " " + self.formatted_header
+        header_text = self.formatted_header
         md_content = Markdown(self.content)
 
         render_group = Group(header_text, md_content)
@@ -96,10 +110,26 @@ class MessageOutput:
         hash_obj = hashlib.md5(encoded_str)
         hash_int = int(hash_obj.hexdigest(), 16)
         emojis = [
-            '🐶', '🐱', '🐭', '🐹', '🐰', '🦊',
-            '🐻', '🐼', '🐨', '🐯', '🦁', '🐮',
-            '🐷', '🐸', '🐵', '🐔', '🐧', '🐦',
-            '🐤']
+            "🐶",
+            "🐱",
+            "🐭",
+            "🐹",
+            "🐰",
+            "🦊",
+            "🐻",
+            "🐼",
+            "🐨",
+            "🐯",
+            "🦁",
+            "🐮",
+            "🐷",
+            "🐸",
+            "🐵",
+            "🐔",
+            "🐧",
+            "🐦",
+            "🐤",
+        ]
 
         emoji_index = hash_int % len(emojis)
 
@@ -109,8 +139,13 @@ class MessageOutput:
 class MessageOutputLive(MessageOutput):
     live_display = None
 
-    def __init__(self, msg_type: Literal["function", "function_output", "text", "system"], sender_name: str,
-                 receiver_name: str, content):
+    def __init__(
+        self,
+        msg_type: Literal["function", "function_output", "text", "system"],
+        sender_name: str,
+        receiver_name: str,
+        content,
+    ):
         super().__init__(msg_type, sender_name, receiver_name, content)
         # Initialize Live display if not already done
         self.live_display = Live(vertical_overflow="visible")
@@ -127,10 +162,19 @@ class MessageOutputLive(MessageOutput):
         """
         Update the display with new snapshot content.
         """
-        self.content = snapshot  # Update content with the latest snapshot
+        self.content = (
+            snapshot or "No content available"
+        )  # Update content with the latest snapshot
 
         header_text = self.formatted_header
-        md_content = Markdown(self.content)
+        try:
+            md_content = Markdown(self.content)
+        except Exception as e:
+            # prevent url markdown error
+            if "string index out of range" in str(e):
+                return
+            else:
+                raise e
 
         # Creating a group of renderables for the live display
         render_group = Group(header_text, md_content)
